@@ -82,6 +82,8 @@ namespace mooprox
 
         private void ResizeColumns(Object sender, EventArgs e)
         {
+            if (this.lvProxies.Columns.Count == 0)
+                return;
             int w = (this.lvProxies.Width / this.lvProxies.Columns.Count) - 2;
             for (var i = 0; i < this.lvProxies.Columns.Count; i++)
                 this.lvProxies.Columns[i].Width = w;
