@@ -1,6 +1,6 @@
 ﻿namespace mooprox
 {
-    partial class frmMain
+    partial class FrmMain
     {
         /// <summary>
         /// Required designer variable.
@@ -28,7 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(frmMain));
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(FrmMain));
             this.lvProxies = new System.Windows.Forms.ListView();
             this.lblHost = new System.Windows.Forms.Label();
             this.lblPort = new System.Windows.Forms.Label();
@@ -197,7 +197,7 @@
             this.Controls.Add(this.lvProxies);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.MinimumSize = new System.Drawing.Size(400, 200);
-            this.Name = "frmMain";
+            this.Name = "FrmMain";
             this.Text = "XproX";
             this.ResumeLayout(false);
             this.PerformLayout();

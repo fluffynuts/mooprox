@@ -1,68 +1,71 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Data;
 using System.Drawing;
 using System.Linq;
-using System.Text;
 using System.Windows.Forms;
 using System.IO;
 using Microsoft.Win32;
-using SimpleINI;
+using PeanutButter.INIFile;
 
 namespace mooprox
 {
-    public partial class frmMain : Form
+    public partial class FrmMain : Form
     {
-        private NotifyIcon trayIcon;
-        private ContextMenu trayMenu;
-        private bool exiting;
-        private INI ini;
+        private NotifyIcon _trayIcon;
+        private ContextMenu _trayMenu;
+        private bool _exiting;
+        private IINIFile _ini = new INIFile(ConfigFilePath);
         private bool _visible = false;
-        private string currentEdit = null;
-        private static string RegKey = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
-        public frmMain()
+        private string _currentEdit = null;
+
+        private static string _regKey =
+            "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
+
+        public FrmMain()
         {
-            this.trayIcon = null;
-            this.trayMenu = null;
-            this.InitializeComponent();
-            this.InitIcon();
-            this.exiting = false;
+            _trayIcon = null;
+            _trayMenu = null;
+            InitializeComponent();
+            InitIcon();
+            _exiting = false;
 
-            this.RefreshProxies();
-            this.lvProxies.Resize += this.ResizeColumns;
+            RefreshProxies();
+            lvProxies.Resize += ResizeColumns;
 
-            this.txtName.GotFocus += this.SelectAllText;
-            this.txtHost.GotFocus += this.SelectAllText;
-            this.txtPort.GotFocus += this.SelectAllText;
+            txtName.GotFocus += SelectAllText;
+            txtHost.GotFocus += SelectAllText;
+            txtPort.GotFocus += SelectAllText;
         }
 
         private void CheckSystemCurrent()
         {
-            string current = this.SelectedProxy();
-            if (current == null)    // first-time run; try to pull current proxy out of the registry and save it
+            var current = SelectedProxy();
+            if (current == null
+            ) // first-time run; try to pull current proxy out of the registry and save it
             {
                 try
                 {
-                    current = Registry.GetValue(RegKey, "ProxyServer", null).ToString();
+                    current = Registry.GetValue(_regKey, "ProxyServer", null).ToString();
                     if (current != null)
                     {
-                        string[] parts = current.Split(new char[] {':'});
+                        var parts = current.Split(new char[] {':'});
                         // look for proxy in known settings
-                        foreach (var s in this.ini.Config.Keys)
+                        foreach (var s in _ini.Sections)
                         {
-                            if (!this.ini.Config[s].ContainsKey("host") ||
-                                !this.ini.Config[s].ContainsKey("port"))
+                            if (!_ini[s].ContainsKey("host") ||
+                                !_ini[s].ContainsKey("port"))
                                 continue;
-                            if ((this.ini.Config[s]["host"] == parts[0]) &&
-                                (this.ini.Config[s]["port"] == parts[1]))
+                            if ((_ini[s]["host"] == parts[0]) &&
+                                (_ini[s]["port"] == parts[1]))
                                 return; // already known
                         }
+
                         if (parts.Length == 2)
                         {
-                            this.ini.SetValue("system", "host", parts[0])
-                                .SetValue("system", "port", parts[1]);
-                            this.ini.WriteFile(this.ConfigFile());
+                            _ini.SetValue("system", "host", parts[0]);
+                            _ini.SetValue("system", "port", parts[1]);
+                            _ini.Persist(ConfigFilePath);
                         }
                     }
                 }
@@ -82,234 +85,248 @@ namespace mooprox
 
         private void ResizeColumns(Object sender, EventArgs e)
         {
-            if (this.lvProxies.Columns.Count == 0)
+            if (lvProxies.Columns.Count == 0)
                 return;
-            int w = (this.lvProxies.Width / this.lvProxies.Columns.Count) - 2;
-            for (var i = 0; i < this.lvProxies.Columns.Count; i++)
-                this.lvProxies.Columns[i].Width = w;
+            var w = (lvProxies.Width / lvProxies.Columns.Count) - 2;
+            for (var i = 0; i < lvProxies.Columns.Count; i++)
+                lvProxies.Columns[i].Width = w;
         }
 
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-            this.ResizeColumns(null, null);
+            ResizeColumns(null, null);
         }
 
         protected override void SetVisibleCore(bool value)
         {
-            base.SetVisibleCore(this._visible);
+            base.SetVisibleCore(_visible);
         }
 
         private bool ProxyEnabled()
         {
-            int enabled = Convert.ToInt32(Registry.GetValue(RegKey, "ProxyEnable", "0").ToString());
-            return (enabled == 0) ? false : true;
+            var enabled =
+                Convert.ToInt32(Registry.GetValue(_regKey, "ProxyEnable", "0").ToString());
+            return (enabled != 0);
         }
 
         private string SelectedProxy()
         {
             // resolves the current system proxy to a selected name
-            int enabled = Convert.ToInt32(Registry.GetValue(RegKey, "ProxyEnable", "0").ToString());
+            var enabled =
+                Convert.ToInt32(Registry.GetValue(_regKey, "ProxyEnable", "0").ToString());
             if (enabled == 0)
                 return null;
-            string systemCurrent = Registry.GetValue(RegKey, "ProxyServer", "").ToString();
-            string[] parts = systemCurrent.Split(new char[] { ':' });
+            var systemCurrent = Registry.GetValue(_regKey, "ProxyServer", "").ToString();
+            var parts = systemCurrent.Split(new char[] {':'});
             if (parts.Length != 2)
                 return null;
             // look for a match
-            foreach (var s in this.ini.Config.Keys)
+            foreach (var s in _ini.Sections)
             {
-                if (!this.ini.Config[s].ContainsKey("host") ||
-                    !this.ini.Config[s].ContainsKey("port"))
+                if (!_ini[s].ContainsKey("host") ||
+                    !_ini[s].ContainsKey("port"))
                     continue;
-                if ((this.ini.Config[s]["host"] == parts[0]) &&
-                    (this.ini.Config[s]["port"] == parts[1]))
+                if ((_ini[s]["host"] == parts[0]) &&
+                    (_ini[s]["port"] == parts[1]))
                     return s;
             }
+
             return null;
         }
 
         private void RefreshProxies()
         {
             // reloads the proxy list and the menus
-            this.lvProxies.Clear();
-            this.currentEdit = null;
-            this.txtName.Text = "";
-            this.txtHost.Text = "";
-            this.txtPort.Text = "";
+            lvProxies.Clear();
+            _currentEdit = null;
+            txtName.Text = "";
+            txtHost.Text = "";
+            txtPort.Text = "";
 
 
-            bool proxyEnabled = this.ProxyEnabled();
+            var proxyEnabled = ProxyEnabled();
             string currentSelected = null;
 
-            if (this.LoadConfig())
+            LoadConfig();
+            CheckSystemCurrent();
+            currentSelected = SelectedProxy();
+
+            lvProxies.View = View.Details;
+            lvProxies.Columns.Clear();
+            lvProxies.Columns.Add("Name");
+            lvProxies.Columns.Add("Host");
+            lvProxies.Columns.Add("Port");
+
+            foreach (var s in _ini.Sections)
             {
-                this.CheckSystemCurrent();
-                currentSelected = this.SelectedProxy();
-
-                this.lvProxies.View = View.Details;
-                this.lvProxies.Columns.Clear();
-                this.lvProxies.Columns.Add("Name");
-                this.lvProxies.Columns.Add("Host");
-                this.lvProxies.Columns.Add("Port");
-
-                foreach (var s in this.ini.Config.Keys)
-                {
-                    // test item is valid
-                    if (!this.ini.Config[s].ContainsKey("host"))
-                        continue;
-                    if (!this.ini.Config[s].ContainsKey("port"))
-                        continue;
-                    ListViewItem li = new ListViewItem(s);
-                    if (proxyEnabled && (s == currentSelected))
-                        li.Selected = true;
-                    li.SubItems.Add(this.ini.Config[s]["host"]);
-                    li.SubItems.Add(this.ini.Config[s]["port"]);
-                    this.lvProxies.Items.Add(li);
-                }
+                // test item is valid
+                if (!_ini[s].ContainsKey("host"))
+                    continue;
+                if (!_ini[s].ContainsKey("port"))
+                    continue;
+                var li = new ListViewItem(s);
+                if (proxyEnabled && (s == currentSelected))
+                    li.Selected = true;
+                li.SubItems.Add(_ini[s]["host"]);
+                li.SubItems.Add(_ini[s]["port"]);
+                lvProxies.Items.Add(li);
             }
-            this.btnSave.Enabled = false;
-            this.btnDel.Enabled = false;
-            this.InitTrayMenu(proxyEnabled, currentSelected);
-            this.ResizeColumns(null, null);
+
+            btnSave.Enabled = false;
+            btnDel.Enabled = false;
+            InitTrayMenu(proxyEnabled, currentSelected);
+            ResizeColumns(null, null);
 
             // select current proxy
         }
 
-        private bool LoadConfig()
+        private void LoadConfig()
         {
-            this.ini = new INI(this.ConfigFile());
-            return this.ini.Loaded;
+            _ini = new INIFile(ConfigFilePath);
         }
 
-        private string ConfigFile()
-        {
-            return String.Join(Path.DirectorySeparatorChar.ToString(), 
-                    new string[] { Environment.GetEnvironmentVariable("USERPROFILE"), "mooprox.ini" });
-        }
+        private static string ConfigFilePath =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                                "mooprox.ini");
 
         private void InitIcon()
         {
-            this.trayIcon = new NotifyIcon();
-            this.trayIcon.Text = "Right-click for quick switch\nClick to open";
-            this.trayIcon.Visible = true;
-            this.trayIcon.Icon = new Icon(GetType(), "cow.ico");
-            this.trayIcon.Click += this.trayClick;
+            _trayIcon = new NotifyIcon();
+            _trayIcon.Text = "Right-click for quick switch\nClick to open";
+            _trayIcon.Visible = true;
+            _trayIcon.Icon = new Icon(GetType(), "cow.ico");
+            _trayIcon.Click += TrayClick;
         }
 
         private void InitTrayMenu(bool proxyEnabled, string currentSelected)
         {
-            if (this.trayMenu != null)
-                this.trayMenu.MenuItems.Clear();
+            if (_trayMenu != null)
+                _trayMenu.MenuItems.Clear();
             // add in proxy switchers
-            string d = (proxyEnabled) ? "Direct" : "[ Direct ]";
-            this.AddMenu(new MenuItem(d, new System.EventHandler(this.DisableProxy)))
+            var d = (proxyEnabled)
+                ? "Direct"
+                : "[ Direct ]";
+            AddMenu(new MenuItem(d, new EventHandler(DisableProxy)))
                 .AddMenu(new MenuItem("-"));
-            if (this.ini.Loaded)
+            if (_ini.Sections.Any())
             {
-                foreach (var s in this.ini.Config.Keys)
+                foreach (var s in _ini.Sections)
                 {
-                    var lbl = (proxyEnabled && (s == currentSelected)) ? "[ " + s + " ]" : s;
-                    this.AddMenu(new ProxyMenuItem(lbl, new System.EventHandler(this.trayProxyClick),
-                                    new ProxyInfo(s, this.ini.Config[s]["host"], this.ini.Config[s]["port"])));
+                    var lbl = (proxyEnabled && (s == currentSelected))
+                        ? "[ " + s + " ]"
+                        : s;
+                    AddMenu(new ProxyMenuItem(lbl,
+                                              TrayProxyClick,
+                                              new ProxyInfo(s, _ini[s]["host"], _ini[s]["port"])));
                 }
             }
             else
-                this.AddMenu(new MenuItem("(No proxies configured yet)"));
+                AddMenu(new MenuItem("(No proxies configured yet)"));
+
             // add in utility menu items
-            this.AddMenu(new MenuItem("-"))
-                .AddMenu(new MenuItem("Exit", new System.EventHandler(this.Exit)));
-            this.trayIcon.ContextMenu = this.trayMenu;
+            AddMenu(new MenuItem("-"))
+                .AddMenu(new MenuItem("Exit", new EventHandler(Exit)));
+            _trayIcon.ContextMenu = _trayMenu;
         }
 
-        private void trayProxyClick(Object sender, EventArgs e)
+        private void TrayProxyClick(Object sender, EventArgs e)
         {
             var m = sender as ProxyMenuItem;
             if (m == null)
                 return;
-            this.ApplyProxy(m.proxy.Host, m.proxy.Port);
+            ApplyProxy(m.proxy.Host, m.proxy.Port);
         }
 
-        private frmMain AddMenu(MenuItem m)
+        private FrmMain AddMenu(MenuItem m)
         {
-            if (this.trayMenu == null)
-                this.trayMenu = new ContextMenu();
-            this.trayMenu.MenuItems.Add(m);
+            if (_trayMenu == null)
+                _trayMenu = new ContextMenu();
+            _trayMenu.MenuItems.Add(m);
             return this;
         }
 
-        private void trayClick(Object sender, EventArgs e)
+        private void TrayClick(Object sender, EventArgs e)
         {
-            MouseEventArgs me = e as MouseEventArgs;
+            var me = e as MouseEventArgs;
             if (me == null)
                 return;
             if (me.Button != MouseButtons.Left)
                 return;
-            this._visible = !this._visible;
-            this.Visible = !this.Visible;
-            this.Activate();
+            _visible = !_visible;
+            Visible = !Visible;
+            Activate();
         }
 
         private void Exit(Object sender, EventArgs e)
         {
-            this.exiting = true;
-            this._visible = true;
-            this.Visible = true;
-            this.Close();
+            _exiting = true;
+            _visible = true;
+            Visible = true;
+            Close();
         }
 
         protected override void OnClosing(CancelEventArgs e)
         {
-            if (!this.exiting)
+            if (!_exiting)
             {
                 e.Cancel = true;
-                this._visible = false;
-                this.Visible = false;
+                _visible = false;
+                Visible = false;
                 return;
             }
-            this.trayIcon.Dispose();
+
+            _trayIcon.Dispose();
         }
 
         private void btnDel_Click(object sender, EventArgs e)
         {
-            if (this.currentEdit == null)
+            if (_currentEdit == null)
                 throw new Exception("Bad programmer! no biscuit! this.currentEdit is null");
-            if (MessageBox.Show(String.Format("Are you sure you want to delete proxy \"{0}\"", this.currentEdit),
-                "Confirm proxy delete", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.Cancel)
+            if (MessageBox.Show($"Are you sure you want to delete proxy \"{_currentEdit}\"",
+                                "Confirm proxy delete",
+                                MessageBoxButtons.OKCancel,
+                                MessageBoxIcon.Question) == DialogResult.Cancel)
                 return;
-            this.ini.DelSection(this.currentEdit);
-            this.ini.WriteFile(this.ConfigFile());
-            this.RefreshProxies();
+            _ini.RemoveSection(_currentEdit);
+            _ini.Persist(ConfigFilePath);
+            RefreshProxies();
         }
 
         private void btnAdd_Click(object sender, EventArgs e)
         {
-            this.txtName.Text = "(new proxy)";
-            this.txtHost.Text = "(new host)";
-            this.txtPort.Text = "8080";
-            this.currentEdit = this.txtName.Text;
-            this.btnSave.Enabled = true;
+            txtName.Text = "(new proxy)";
+            txtHost.Text = "(new host)";
+            txtPort.Text = "8080";
+            _currentEdit = txtName.Text;
+            btnSave.Enabled = true;
         }
 
-        private bool AddProxy(string Name, string Host, string Port)
+        private bool AddProxy(string name, string host, string port)
         {
-            if (!this.ValidateProxy(Name, Host, Port))
+            if (!ValidateProxy(name, host, port))
                 return false;
             // test already exists by name
-            if (this.ini.Config.ContainsKey(Name) && (this.currentEdit != null) && (this.currentEdit != Name))
+            if (_ini.HasSection(name) && (_currentEdit != null) && (_currentEdit != name))
             {
-                if (MessageBox.Show(String.Format("You already have a proxy with the name {0} defined. Overwrite?", Name),
-                    "Confirm replacement", MessageBoxButtons.OKCancel) == DialogResult.Cancel)
+                if (MessageBox.Show(
+                        $"You already have a proxy with the name {name} defined. Overwrite?",
+                        "Confirm replacement",
+                        MessageBoxButtons.OKCancel) == DialogResult.Cancel)
                     return false;
             }
 
             // add the item to the config
-            this.ini.SetValue(Name, "host", Host);
-            this.ini.SetValue(Name, "port", Port);
+            _ini.SetValue(name, "host", host);
+            _ini.SetValue(name, "port", port);
             // save the config
-            if (!this.ini.WriteFile(this.ConfigFile()))
+            try
             {
-                this.MBError(String.Format("Unable to update config file at {0}", this.ConfigFile()));
+                _ini.Persist(ConfigFilePath);
+            }
+            catch (Exception e)
+            {
+                MbError($"Unable to update config file at {ConfigFilePath}");
                 return false;
             }
 
@@ -320,7 +337,7 @@ namespace mooprox
         {
             port = port.Trim();
             long lngPort;
-            List<string> errors = new List<string>();
+            var errors = new List<string>();
             try
             {
                 lngPort = Convert.ToInt32(port);
@@ -329,108 +346,113 @@ namespace mooprox
             {
                 errors.Add("The port number you have specified is invalid");
             }
+
             if (Name != null)
             {
                 Name = Name.Trim();
                 if (Name.Length == 0)
                     errors.Add("You haven't specified a name for this proxy");
             }
+
             host = host.Trim();
             if (host.Length == 0)
                 errors.Add("You haven't specified a host for this proxy");
-            if (errors.Count() > 0)
-            {
-                this.MBError(String.Join("\n*", errors.ToArray()));
-                return false;
-            }
-            return true;
+            if (!errors.Any())
+                return true;
+            MbError(String.Join("\n*", errors.ToArray()));
+            return false;
+
         }
 
-        private void MBError(string str)
+        private void MbError(string str)
         {
             MessageBox.Show(this, str, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
         private void lvProxies_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (this.lvProxies.SelectedItems.Count == 0)
+            if (lvProxies.SelectedItems.Count == 0)
             {
-                this.btnSave.Enabled = false;
-                this.btnDel.Enabled = false;
-                this.currentEdit = null;
+                btnSave.Enabled = false;
+                btnDel.Enabled = false;
+                _currentEdit = null;
                 return;
             }
-            foreach (ListViewItem item in this.lvProxies.SelectedItems)
+
+            foreach (ListViewItem item in lvProxies.SelectedItems)
             {
-                this.txtName.Text = item.Text;
-                this.txtHost.Text = item.SubItems[1].Text;
-                this.txtPort.Text = item.SubItems[2].Text;
-                this.currentEdit = item.Text;
+                txtName.Text = item.Text;
+                txtHost.Text = item.SubItems[1].Text;
+                txtPort.Text = item.SubItems[2].Text;
+                _currentEdit = item.Text;
             }
-            this.btnSave.Enabled = true;
-            this.btnDel.Enabled = true;
+
+            btnSave.Enabled = true;
+            btnDel.Enabled = true;
         }
 
         private void btnExit_Click(object sender, EventArgs e)
         {
-            this.Exit(sender, e);
+            Exit(sender, e);
         }
 
         private void btnSave_Click(object sender, EventArgs e)
         {
-            if (this.currentEdit == null)
-                throw new Exception("currentEdit is null; shouldn't happen; go smack your developer");
-            if (this.AddProxy(this.txtName.Text, this.txtHost.Text, this.txtPort.Text))
+            if (_currentEdit == null)
+                throw new Exception(
+                    "currentEdit is null; shouldn't happen; go smack your developer");
+            if (AddProxy(txtName.Text, txtHost.Text, txtPort.Text))
             {
-                this.ini.DelSection(this.currentEdit);
-                this.currentEdit = null;
-                this.ini.WriteFile(this.ConfigFile());
+                _ini.RemoveSection(_currentEdit);
+                _currentEdit = null;
+                _ini.Persist(ConfigFilePath);
                 // reload config
-                this.RefreshProxies();
+                RefreshProxies();
             }
         }
 
         private void btnApply_Click(object sender, EventArgs e)
         {
-            this.ApplyProxy(this.txtHost.Text, this.txtPort.Text);
+            ApplyProxy(txtHost.Text, txtPort.Text);
         }
 
         private void ApplyProxy(string host, string port)
         {
-            if (!this.ValidateProxy(null, host, port))
+            if (!ValidateProxy(null, host, port))
                 return;
-            Registry.SetValue(RegKey, "ProxyServer", String.Format("{0}:{1}", host, port));
-            this.EnableProxy();
-            this.RefreshProxies();
+            Registry.SetValue(_regKey, "ProxyServer", $"{host}:{port}");
+            EnableProxy();
+            RefreshProxies();
         }
 
         private void DisableProxy(object sender, EventArgs e)
         {
-            Registry.SetValue(RegKey, "ProxyEnable", 0);
-            this.txtName.Text = "";
-            this.txtHost.Text = "";
-            this.txtPort.Text = "";
-            this.lvProxies.SelectedItems.Clear();
-            this.RefreshProxies();
+            Registry.SetValue(_regKey, "ProxyEnable", 0);
+            txtName.Text = "";
+            txtHost.Text = "";
+            txtPort.Text = "";
+            lvProxies.SelectedItems.Clear();
+            RefreshProxies();
         }
 
         private void EnableProxy()
         {
-            Registry.SetValue(RegKey, "ProxyEnable", 1);
+            Registry.SetValue(_regKey, "ProxyEnable", 1);
         }
 
         private void btnNoProxy_Click(object sender, EventArgs e)
         {
-            this.DisableProxy(null, null);
+            DisableProxy(null, null);
         }
 
         private void lvProxies_DoubleClick(object sender, EventArgs e)
         {
-            foreach (ListViewItem li in this.lvProxies.SelectedItems)
+            foreach (ListViewItem li in lvProxies.SelectedItems)
             {
-                this.ApplyProxy(li.SubItems[1].Text, li.SubItems[2].Text);
+                ApplyProxy(li.SubItems[1].Text, li.SubItems[2].Text);
             }
-            this.RefreshProxies();
+
+            RefreshProxies();
         }
     }
 }
